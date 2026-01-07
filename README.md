@@ -13,6 +13,22 @@ KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers
 *   **💾 Auto-Backup & Cleanup:** Automatically backs up configuration files before changes and cleans old backups to save disk space.
 *   **📝 Logging System:** Detailed activity logs stored in `/var/log/kalidns/`.
 
+## 📸 Screenshots
+
+<div align="center">
+  
+  ![Main Interface](1.png)
+  *Main menu interface showing available DNS options*
+  
+  ![Benchmark Results](2.png)
+  *DNS speed benchmark test results*
+  
+  ![Status Check](3.png)
+  *Current system status and DNS configuration*
+
+</div>
+
+
 ## 🚀 Installation & Usage
 
 You can run this script directly without installation.
