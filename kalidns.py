@@ -6,8 +6,28 @@ import shutil
 import time
 import ipaddress
 import datetime
+import json
+import socket
+import urllib.request
+import random
+import string
 
-# --- KONFIGURASI WARNA ---
+# --- RICH TUI (optional, graceful fallback) ---
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.prompt import Prompt, Confirm
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+    from rich import box
+    RICH_AVAILABLE = True
+    console = Console()
+except ImportError:
+    RICH_AVAILABLE = False
+    console = None
+
+# --- KONFIGURASI WARNA (fallback when rich unavailable) ---
 class Color:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -25,12 +45,33 @@ LOG_FILE = os.path.join(LOG_DIR, "dns.log")
 
 # --- DATA PRESETS ---
 DNS_PRESETS = {
-    '1': {'name': 'Google', 'ips': ['8.8.8.8', '8.8.4.4']},
-    '2': {'name': 'Cloudflare', 'ips': ['1.1.1.1', '1.0.0.1']},
-    '3': {'name': 'Quad9 (Security)', 'ips': ['9.9.9.9', '149.112.112.112']},
-    '4': {'name': 'AdGuard (No Ads)', 'ips': ['94.140.14.14', '94.140.15.15']},
-    '5': {'name': 'CleanBrowsing (Family)', 'ips': ['185.228.168.9', '185.228.169.9']},
+    '1': {'name': 'Google', 'ips': ['8.8.8.8', '8.8.4.4'],
+          'ipv6': ['2001:4860:4860::8888', '2001:4860:4860::8844']},
+    '2': {'name': 'Cloudflare', 'ips': ['1.1.1.1', '1.0.0.1'],
+          'ipv6': ['2606:4700:4700::1111', '2606:4700:4700::1001']},
+    '3': {'name': 'Quad9 (Security)', 'ips': ['9.9.9.9', '149.112.112.112'],
+          'ipv6': ['2620:fe::fe', '2620:fe::9']},
+    '4': {'name': 'AdGuard (No Ads)', 'ips': ['94.140.14.14', '94.140.15.15'],
+          'ipv6': ['2a10:50c0::ad1:ff', '2a10:50c0::ad2:ff']},
+    '5': {'name': 'CleanBrowsing (Family)', 'ips': ['185.228.168.9', '185.228.169.9'],
+          'ipv6': ['2a0d:2a00:1::2', '2a0d:2a00:2::2']},
 }
+
+# --- DoH PROVIDER CONFIG ---
+DOH_PROVIDERS = {
+    'Cloudflare': {
+        'server_name': 'cloudflare-dns.com',
+        'stamp': 'sdns://AgcAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5',
+        'listen': '127.0.0.1:53',
+    },
+    'Google': {
+        'server_name': 'dns.google',
+        'stamp': 'sdns://AgUAAAAAAAAABzguOC44LjigHvYkz_9ea9O63fP92_3qVlRn43cpncfuZnUWbzAMwbkgRE69Z7uD-IB7OSHpOKyReLiCvVCq2xEjHwRM9fCN984KZG5zLmdvb2dsZQovZG5zLXF1ZXJ5',
+        'listen': '127.0.0.1:53',
+    },
+}
+
+DNSCRYPT_PROXY_CONF = "/etc/dnscrypt-proxy/dnscrypt-proxy.toml"
 
 # --- FUNGSI UTILITAS ---
 
@@ -40,15 +81,25 @@ def check_root():
         sys.exit(1)
 
 def clear_screen():
-    subprocess.run(['clear'], stderr=subprocess.DEVNULL)
+    if RICH_AVAILABLE:
+        console.clear()
+    else:
+        subprocess.run(['clear'], stderr=subprocess.DEVNULL)
 
 def banner():
-    print(f"{Color.HEADER}{Color.BOLD}")
-    print("="*60)
-    print("   KALI LINUX DNS CHANGER TOOL (ULTIMATE EDITION)")
-    print("   Secure Atomic Write, Auto-Backup, & Leak Test")
-    print("="*60)
-    print(f"{Color.ENDC}")
+    if RICH_AVAILABLE:
+        banner_text = Text()
+        banner_text.append("KALI LINUX DNS CHANGER TOOL\n", style="bold cyan")
+        banner_text.append("v2.0 ULTIMATE EDITION\n", style="bold white")
+        banner_text.append("DoT • DoH • Leak Test • Benchmark • IPv6", style="dim")
+        console.print(Panel(banner_text, border_style="bright_cyan", box=box.DOUBLE_EDGE, padding=(1, 2)))
+    else:
+        print(f"{Color.HEADER}{Color.BOLD}")
+        print("="*60)
+        print("   KALI LINUX DNS CHANGER TOOL (ULTIMATE EDITION v2.0)")
+        print("   DoT • DoH • Leak Test • Benchmark • IPv6")
+        print("="*60)
+        print(f"{Color.ENDC}")
 
 def log_action(action, details):
     try:
@@ -192,6 +243,75 @@ def test_dns_connectivity():
         status = "DISCONNECTED"
     log_action("DNS_CONNECTIVITY", f"Status: {status} ({success_count}/{len(test_domains)})")
 
+def test_dns_leak():
+    """Perform a real DNS leak test using bash.ws API."""
+    print(f"\n{Color.WARNING}[*] Melakukan DNS Leak Test (via bash.ws)...{Color.ENDC}")
+    # Generate unique test ID
+    test_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12))
+
+    # Step 1: Trigger DNS resolution through the system resolver
+    print(f"{Color.BLUE}[i] Mengirim query DNS test...{Color.ENDC}")
+    resolve_domains = [f"{i}.{test_id}.bash.ws" for i in range(1, 11)]
+    for domain in resolve_domains:
+        try:
+            socket.getaddrinfo(domain, 80, socket.AF_INET, socket.SOCK_STREAM)
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+    # Step 2: Fetch results from API
+    time.sleep(2)
+    api_url = f"https://bash.ws/dnsleak/test/{test_id}?json"
+    print(f"{Color.BLUE}[i] Mengambil hasil dari API...{Color.ENDC}")
+    try:
+        req = urllib.request.Request(api_url, headers={'User-Agent': 'KaliDNS/2.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        print(f"{Color.FAIL}[!] Gagal mengambil hasil leak test: {e}{Color.ENDC}")
+        print(f"{Color.BLUE}[i] Coba manual: https://bash.ws/dnsleak{Color.ENDC}")
+        log_action("DNS_LEAK", f"API error: {e}")
+        return
+
+    # Step 3: Parse and display results
+    if not data:
+        print(f"{Color.WARNING}[!] Tidak ada data dari API. Server mungkin sibuk.{Color.ENDC}")
+        return
+
+    dns_servers = []
+    conclusion = ""
+    for entry in data:
+        entry_type = entry.get('type', '')
+        if entry_type == 'dns':
+            ip = entry.get('ip', 'N/A')
+            country = entry.get('country_name', 'Unknown')
+            asn = entry.get('asn', '')
+            isp = entry.get('asn_name', 'Unknown')
+            dns_servers.append({'ip': ip, 'country': country, 'isp': isp, 'asn': asn})
+        elif entry_type == 'conclusion':
+            conclusion = entry.get('ip', '')
+
+    if dns_servers:
+        print(f"\n{Color.BOLD}DNS Resolvers Terdeteksi:{Color.ENDC}")
+        print(f"{'No':>3}  {'IP Address':<20} {'Country':<15} {'ISP':<30}")
+        print("-" * 70)
+        for i, srv in enumerate(dns_servers, 1):
+            print(f"{i:>3}  {srv['ip']:<20} {srv['country']:<15} {srv['isp']:<30}")
+
+        unique_isps = set(s['isp'] for s in dns_servers)
+        if len(unique_isps) == 1:
+            print(f"\n{Color.GREEN}[✓] AMAN: Semua DNS query melalui satu provider ({list(unique_isps)[0]}).{Color.ENDC}")
+        else:
+            print(f"\n{Color.FAIL}[!] PERHATIAN: DNS query melalui {len(unique_isps)} provider berbeda!{Color.ENDC}")
+            print(f"{Color.FAIL}    Kemungkinan DNS LEAK terdeteksi.{Color.ENDC}")
+    else:
+        print(f"{Color.WARNING}[!] Tidak ada DNS resolver terdeteksi.{Color.ENDC}")
+
+    if conclusion:
+        print(f"\n{Color.BLUE}[i] Kesimpulan: {conclusion}{Color.ENDC}")
+
+    log_action("DNS_LEAK", f"Servers: {len(dns_servers)}, ISPs: {len(set(s['isp'] for s in dns_servers)) if dns_servers else 0}")
+
 def benchmark_dns(ip, domain='google.com', rounds=3):
     if not shutil.which('nslookup'):
         print(f"{Color.FAIL}[!] 'nslookup' tidak ditemukan. Install dnsutils: sudo apt install dnsutils{Color.ENDC}")
@@ -208,6 +328,45 @@ def benchmark_dns(ip, domain='google.com', rounds=3):
     return sum(times) / len(times) if times else float('inf')
 
 def run_benchmark():
+    if RICH_AVAILABLE:
+        _run_benchmark_rich()
+    else:
+        _run_benchmark_plain()
+
+def _run_benchmark_rich():
+    if not shutil.which('nslookup'):
+        console.print("[bold red][!] 'nslookup' tidak ditemukan. Install: sudo apt install dnsutils[/bold red]")
+        return
+    console.print("\n[bold yellow][*] Benchmarking DNS Speed (3-round avg)...[/bold yellow]")
+    results = []
+    table = Table(title="DNS Benchmark Results", box=box.ROUNDED, border_style="cyan")
+    table.add_column("Provider", style="bold white", min_width=20)
+    table.add_column("Avg Speed", justify="right", min_width=12)
+    table.add_column("Status", justify="center")
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                  BarColumn(), transient=True, console=console) as progress:
+        task = progress.add_task("Testing...", total=len(DNS_PRESETS))
+        for key, data in DNS_PRESETS.items():
+            name = data['name']
+            progress.update(task, description=f"Testing {name}...")
+            avg_time = benchmark_dns(data['ips'][0])
+            if avg_time != float('inf'):
+                table.add_row(name, f"{avg_time:.4f}s", "[green]✓ OK[/green]")
+                results.append((name, avg_time))
+            else:
+                table.add_row(name, "---", "[red]✗ Timeout[/red]")
+            progress.advance(task)
+
+    console.print(table)
+    if results:
+        best = min(results, key=lambda x: x[1])
+        console.print(f"\n[bold cyan][i] Rekomendasi Tercepat: [bold white]{best[0]} ({best[1]:.4f}s)[/bold white][/bold cyan]")
+        log_action("BENCHMARK", f"Best: {best[0]} ({best[1]:.4f}s)")
+    else:
+        console.print("\n[bold red][!] Semua koneksi timeout.[/bold red]")
+
+def _run_benchmark_plain():
     print(f"\n{Color.WARNING}[*] Benchmarking DNS Speed (3-round avg, lower is better)...{Color.ENDC}")
     if not shutil.which('nslookup'):
         print(f"{Color.FAIL}[!] 'nslookup' tidak ditemukan. Install: sudo apt install dnsutils{Color.ENDC}")
@@ -326,6 +485,89 @@ def setup_dot(provider="Cloudflare"):
         print(f"{Color.GREEN}[+] SUKSES! Mode Anti-Blokir (DoT) aktif.{Color.ENDC}")
         test_dns_connectivity()
 
+def setup_doh(provider="Cloudflare"):
+    """Setup DNS-over-HTTPS using dnscrypt-proxy."""
+    print(f"\n{Color.WARNING}[*] Mengaktifkan Mode DoH - {provider}...{Color.ENDC}")
+    log_action("SETUP_DOH", f"Provider: {provider}")
+
+    if provider not in DOH_PROVIDERS:
+        print(f"{Color.FAIL}[!] Provider DoH '{provider}' tidak dikenal.{Color.ENDC}")
+        return
+
+    # Check if dnscrypt-proxy is installed
+    if not shutil.which('dnscrypt-proxy'):
+        print(f"{Color.WARNING}[!] dnscrypt-proxy belum terinstall.{Color.ENDC}")
+        confirm = input(f"{Color.WARNING}[?] Install dnscrypt-proxy sekarang? (y/N): {Color.ENDC}")
+        if confirm.strip().lower() != 'y':
+            print(f"{Color.BLUE}[i] Install manual: sudo apt install dnscrypt-proxy{Color.ENDC}")
+            return
+        print(f"{Color.BLUE}[i] Menginstall dnscrypt-proxy...{Color.ENDC}")
+        try:
+            subprocess.run(['apt', 'update', '-qq'], check=True, timeout=60)
+            subprocess.run(['apt', 'install', '-y', '-qq', 'dnscrypt-proxy'], check=True, timeout=120)
+        except Exception as e:
+            print(f"{Color.FAIL}[!] Gagal install: {e}{Color.ENDC}")
+            return
+
+    prov = DOH_PROVIDERS[provider]
+
+    # Generate dnscrypt-proxy config
+    config = f"""# Generated by KaliDNS Tool - DoH Mode ({provider})
+listen_addresses = ['{prov['listen']}']
+max_clients = 250
+ipv4_servers = true
+ipv6_servers = false
+dnscrypt_servers = false
+doh_servers = true
+require_dnssec = false
+require_nolog = true
+require_nofilter = true
+force_tcp = false
+timeout = 5000
+keepalive = 30
+log_level = 2
+use_syslog = false
+cache = true
+cache_size = 4096
+cache_min_ttl = 2400
+cache_max_ttl = 86400
+cache_neg_min_ttl = 60
+cache_neg_max_ttl = 600
+
+[static]
+[static.'{prov['server_name']}']
+stamp = '{prov['stamp']}'
+"""
+
+    conf_dir = os.path.dirname(DNSCRYPT_PROXY_CONF)
+    if not os.path.exists(conf_dir):
+        os.makedirs(conf_dir, exist_ok=True)
+
+    backup_file(DNSCRYPT_PROXY_CONF)
+    if not atomic_write(DNSCRYPT_PROXY_CONF, config):
+        return
+
+    # Stop systemd-resolved to free port 53
+    try:
+        subprocess.run(['systemctl', 'stop', 'systemd-resolved'], stderr=subprocess.DEVNULL, timeout=10)
+        subprocess.run(['systemctl', 'disable', 'systemd-resolved'], stderr=subprocess.DEVNULL, timeout=10)
+    except Exception:
+        pass
+
+    # Start dnscrypt-proxy
+    if not safe_restart_service('dnscrypt-proxy'):
+        print(f"{Color.FAIL}[!] Gagal menjalankan dnscrypt-proxy.{Color.ENDC}")
+        return
+
+    # Point resolv.conf to localhost
+    unlock_file()
+    resolv_content = f"# Generated by KaliDNS Tool - DoH MODE ({provider})\nnameserver 127.0.0.1\n"
+    if atomic_write(RESOLV_CONF, resolv_content):
+        lock_file()
+        flush_dns_cache()
+        print(f"{Color.GREEN}[+] SUKSES! Mode DoH ({provider}) aktif via dnscrypt-proxy.{Color.ENDC}")
+        test_dns_connectivity()
+
 def _find_latest_backup(filepath):
     """Find the most recent .backup_* file for a given config file."""
     backup_dir = os.path.dirname(filepath)
@@ -370,6 +612,7 @@ def restore_default():
 
 def print_dot_status():
     dot_status = "Non-Aktif (Standard)"
+    doh_status = "Non-Aktif"
     if os.path.exists(SYSTEMD_RESOLVED_CONF):
         try:
             with open(SYSTEMD_RESOLVED_CONF, 'r') as f:
@@ -377,17 +620,37 @@ def print_dot_status():
                     dot_status = f"{Color.GREEN}AKTIF (Secure/Encrypted){Color.ENDC}"
         except Exception:
             pass
+    if os.path.exists(DNSCRYPT_PROXY_CONF):
+        try:
+            with open(DNSCRYPT_PROXY_CONF, 'r') as f:
+                content = f.read()
+                if 'doh_servers = true' in content:
+                    # Check if dnscrypt-proxy is running
+                    result = subprocess.run(['systemctl', 'is-active', 'dnscrypt-proxy'],
+                                          capture_output=True, text=True)
+                    if result.stdout.strip() == 'active':
+                        doh_status = f"{Color.GREEN}AKTIF (DoH via dnscrypt-proxy){Color.ENDC}"
+        except Exception:
+            pass
     print(f"Status Anti-Blokir (DoT): {dot_status}")
+    print(f"Status DoH             : {doh_status}")
 
 def parse_args():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
+        use_ipv6 = '--ipv6' in sys.argv
         if arg in DNS_PRESETS:
             preset = DNS_PRESETS[arg]
-            set_dns(preset['ips'], preset['name'])
+            ips = list(preset['ips'])
+            if use_ipv6 and 'ipv6' in preset:
+                ips.extend(preset['ipv6'])
+            set_dns(ips, preset['name'])
             return True
         elif arg == '--test':
             test_dns_connectivity()
+            return True
+        elif arg == '--leak':
+            test_dns_leak()
             return True
         elif arg == '--benchmark':
             run_benchmark()
@@ -403,11 +666,13 @@ def parse_args():
         elif arg == '--help' or arg == '-h':
             print(f"{Color.BOLD}Usage:{Color.ENDC} sudo python3 kalidns.py [OPTION]")
             print("\nOptions:")
-            print("  1-5        : Apply preset")
-            print("  --test     : Run DNS leak test")
-            print("  --benchmark: Run speed test")
-            print("  --status   : Show status")
-            print("  --reset    : Restore default")
+            print("  1-5          : Apply preset (add --ipv6 for IPv6)")
+            print("  --test       : Run DNS connectivity test")
+            print("  --leak       : Run DNS leak test (bash.ws)")
+            print("  --benchmark  : Run speed test")
+            print("  --status     : Show status")
+            print("  --reset      : Restore default")
+            print("  --ipv6       : Include IPv6 with presets")
             return True
         else:
             print(f"{Color.FAIL}[!] Argumen tidak dikenal. Gunakan --help.{Color.ENDC}")
@@ -423,31 +688,64 @@ def main():
         clear_screen()
         banner()
         current = get_current_dns()
-        print(f"DNS di /etc/resolv.conf: {Color.GREEN}{', '.join(current)}{Color.ENDC}")
-        print_dot_status()
-        print("")
-        print("PILIHAN DNS STANDARD (Cepat & Stabil):")
-        for key, data in DNS_PRESETS.items():
-            print(f"{key}. {data['name']} ({', '.join(data['ips'])})")
-        print(f"6. Input Custom (Manual)")
-        print("-" * 40)
-        print(f"{Color.WARNING}PILIHAN ANTI-BLOKIR (Enkripsi/DoT):{Color.ENDC}")
-        print("7. Aktifkan Mode Anti-Blokir (Cloudflare Secure)")
-        print("8. Aktifkan Mode Anti-Blokir (Google Secure)")
-        print("9. Aktifkan Mode Anti-Blokir (Quad9 Secure)")
-        print("-" * 40)
-        print(f"{Color.BLUE}UTILITIES:{Color.ENDC}")
-        print("10. Benchmark Kecepatan DNS (Speed Test)")
-        print("11. Cek Koneksi (Leak Test)")
-        print(f"12. {Color.FAIL}Reset ke Default (Hapus Semua Config){Color.ENDC}")
-        print("0.  Keluar")
-        
-        choice = input(f"\n{Color.BOLD}Masukan Pilihan: {Color.ENDC}")
+
+        if RICH_AVAILABLE:
+            console.print(f"DNS: [bold green]{', '.join(current)}[/bold green]")
+            print_dot_status()
+            console.print()
+
+            # Presets table
+            t = Table(title="DNS Presets", box=box.SIMPLE_HEAVY, border_style="cyan")
+            t.add_column("#", style="bold", width=3)
+            t.add_column("Provider", style="bold white")
+            t.add_column("IPv4", style="green")
+            t.add_column("IPv6", style="dim")
+            for key, data in DNS_PRESETS.items():
+                t.add_row(key, data['name'], ', '.join(data['ips']), ', '.join(data.get('ipv6', [])[:1]))
+            t.add_row("6", "Custom (Manual)", "IPv4/IPv6", "")
+            console.print(t)
+
+            console.print("\n[bold yellow]ANTI-BLOKIR (Enkripsi):[/bold yellow]")
+            console.print(" 7-9.   DoT (Cloudflare / Google / Quad9)")
+            console.print(" 10-11. DoH (Cloudflare / Google via dnscrypt-proxy)")
+            console.print(f"\n[bold cyan]UTILITIES:[/bold cyan]")
+            console.print(" 12. Benchmark  |  13. Connectivity  |  14. Leak Test")
+            console.print(" [bold red]15. Reset ke Default[/bold red]  |  0. Keluar")
+            choice = Prompt.ask("\n[bold]Pilihan", default="0")
+        else:
+            print(f"DNS di /etc/resolv.conf: {Color.GREEN}{', '.join(current)}{Color.ENDC}")
+            print_dot_status()
+            print("")
+            print("PILIHAN DNS STANDARD (Cepat & Stabil):")
+            for key, data in DNS_PRESETS.items():
+                ipv6_info = f" | IPv6: {', '.join(data.get('ipv6', [])[:1])}" if data.get('ipv6') else ''
+                print(f"{key}. {data['name']} ({', '.join(data['ips'])}{ipv6_info})")
+            print(f"6. Input Custom (Manual, mendukung IPv4/IPv6)")
+            print("-" * 60)
+            print(f"{Color.WARNING}PILIHAN ANTI-BLOKIR (Enkripsi):{Color.ENDC}")
+            print("7.  Aktifkan DoT (Cloudflare Secure)")
+            print("8.  Aktifkan DoT (Google Secure)")
+            print("9.  Aktifkan DoT (Quad9 Secure)")
+            print("10. Aktifkan DoH (Cloudflare via dnscrypt-proxy)")
+            print("11. Aktifkan DoH (Google via dnscrypt-proxy)")
+            print("-" * 60)
+            print(f"{Color.BLUE}UTILITIES:{Color.ENDC}")
+            print("12. Benchmark Kecepatan DNS (Speed Test)")
+            print("13. Cek Koneksi DNS (Connectivity Test)")
+            print("14. DNS Leak Test (bash.ws)")
+            print(f"15. {Color.FAIL}Reset ke Default (Hapus Semua Config){Color.ENDC}")
+            print("0.  Keluar")
+            choice = input(f"\n{Color.BOLD}Masukan Pilihan: {Color.ENDC}")
         if choice in DNS_PRESETS:
             preset = DNS_PRESETS[choice]
-            set_dns(preset['ips'], preset['name'])
+            use_v6 = input("Tambahkan IPv6? (y/N): ").strip().lower() == 'y'
+            ips = list(preset['ips'])
+            if use_v6 and 'ipv6' in preset:
+                ips.extend(preset['ipv6'])
+            set_dns(ips, preset['name'])
         elif choice == '6':
-            ns1 = input("Masukkan Primary DNS: ")
+            print(f"{Color.BLUE}[i] Contoh IPv4: 8.8.8.8 | IPv6: 2001:4860:4860::8888{Color.ENDC}")
+            ns1 = input("Masukkan Primary DNS  : ")
             ns2 = input("Masukkan Secondary DNS (opsional): ")
             servers = [ns1]
             if ns2.strip(): servers.append(ns2)
@@ -455,9 +753,12 @@ def main():
         elif choice == '7': setup_dot("Cloudflare")
         elif choice == '8': setup_dot("Google")
         elif choice == '9': setup_dot("Quad9")
-        elif choice == '10': run_benchmark()
-        elif choice == '11': test_dns_connectivity()
-        elif choice == '12': restore_default()
+        elif choice == '10': setup_doh("Cloudflare")
+        elif choice == '11': setup_doh("Google")
+        elif choice == '12': run_benchmark()
+        elif choice == '13': test_dns_connectivity()
+        elif choice == '14': test_dns_leak()
+        elif choice == '15': restore_default()
         elif choice == '0':
             print("Keluar.")
             sys.exit()

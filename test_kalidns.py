@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+import json
 import shutil
 import tempfile
 import unittest
@@ -294,6 +295,123 @@ class TestLogAction(unittest.TestCase):
             finally:
                 kalidns.LOG_DIR = original_dir
                 kalidns.LOG_FILE = original_file
+
+
+class TestDNSLeakTest(unittest.TestCase):
+    """Test DNS leak test parsing logic."""
+
+    @patch('kalidns.log_action')
+    @patch('urllib.request.urlopen')
+    @patch('socket.getaddrinfo')
+    @patch('time.sleep')
+    def test_parses_api_response(self, mock_sleep, mock_getaddr, mock_urlopen, mock_log):
+        mock_getaddr.return_value = []
+        api_response = json.dumps([
+            {'type': 'dns', 'ip': '1.1.1.1', 'country_name': 'US', 'asn': 'AS13335', 'asn_name': 'Cloudflare'},
+            {'type': 'dns', 'ip': '1.0.0.1', 'country_name': 'US', 'asn': 'AS13335', 'asn_name': 'Cloudflare'},
+            {'type': 'conclusion', 'ip': 'No DNS leak detected.'},
+        ]).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = api_response
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        # Should run without error
+        kalidns.test_dns_leak()
+        mock_log.assert_called()
+
+    @patch('kalidns.log_action')
+    @patch('urllib.request.urlopen', side_effect=Exception('timeout'))
+    @patch('socket.getaddrinfo')
+    @patch('time.sleep')
+    def test_handles_api_failure(self, mock_sleep, mock_getaddr, mock_urlopen, mock_log):
+        mock_getaddr.return_value = []
+        # Should not raise
+        kalidns.test_dns_leak()
+
+
+class TestDoHSetup(unittest.TestCase):
+    """Test DoH setup via dnscrypt-proxy."""
+
+    @patch('kalidns.test_dns_connectivity')
+    @patch('kalidns.flush_dns_cache')
+    @patch('kalidns.lock_file')
+    @patch('kalidns.unlock_file')
+    @patch('kalidns.safe_restart_service', return_value=True)
+    @patch('kalidns.atomic_write', return_value=True)
+    @patch('kalidns.backup_file')
+    @patch('os.path.exists', return_value=True)
+    @patch('os.makedirs')
+    @patch('subprocess.run')
+    @patch('shutil.which', return_value='/usr/sbin/dnscrypt-proxy')
+    def test_doh_cloudflare_generates_config(self, mock_which, mock_run, mock_makedirs,
+                                               mock_exists, mock_backup, mock_write,
+                                               mock_restart, mock_unlock, mock_lock,
+                                               mock_flush, mock_conn):
+        kalidns.setup_doh("Cloudflare")
+        # atomic_write called at least once for dnscrypt-proxy config
+        self.assertTrue(mock_write.called)
+        config_content = mock_write.call_args_list[0][0][1]
+        self.assertIn('doh_servers = true', config_content)
+        self.assertIn('cloudflare-dns.com', config_content)
+
+    @patch('shutil.which', return_value=None)
+    @patch('builtins.input', return_value='n')
+    def test_doh_prompts_install_if_missing(self, mock_input, mock_which):
+        kalidns.setup_doh("Cloudflare")
+        # Should ask user to install
+        mock_input.assert_called()
+
+    def test_doh_rejects_unknown_provider(self):
+        kalidns.setup_doh("UnknownProvider")
+        # Should not crash
+
+
+class TestIPv6Presets(unittest.TestCase):
+    """Test IPv6 addresses in presets."""
+
+    def test_all_presets_have_ipv6(self):
+        for key, data in kalidns.DNS_PRESETS.items():
+            self.assertIn('ipv6', data, f"Preset {key} ({data['name']}) missing 'ipv6' key")
+            self.assertGreater(len(data['ipv6']), 0, f"Preset {key} has empty ipv6 list")
+
+    def test_all_ipv6_addresses_valid(self):
+        for key, data in kalidns.DNS_PRESETS.items():
+            for addr in data['ipv6']:
+                result = kalidns.validate_ip(addr)
+                self.assertIsNotNone(result, f"Invalid IPv6 in preset {key}: {addr}")
+
+
+class TestIPv6CustomInput(unittest.TestCase):
+    """Test IPv6 format validation edge cases."""
+
+    def test_full_ipv6(self):
+        self.assertIsNotNone(kalidns.validate_ip('2001:0db8:85a3:0000:0000:8a2e:0370:7334'))
+
+    def test_compressed_ipv6(self):
+        self.assertIsNotNone(kalidns.validate_ip('2001:db8::1'))
+
+    def test_loopback_ipv6(self):
+        self.assertEqual(kalidns.validate_ip('::1'), '::1')
+
+    def test_mixed_v4_in_v6_invalid(self):
+        # This is a valid IPv6 mapped IPv4
+        result = kalidns.validate_ip('::ffff:192.168.1.1')
+        self.assertIsNotNone(result)
+
+    def test_invalid_ipv6(self):
+        self.assertIsNone(kalidns.validate_ip('2001:xyz::1'))
+
+
+class TestDoHProviders(unittest.TestCase):
+    """Test DoH provider configuration."""
+
+    def test_all_providers_have_required_fields(self):
+        for name, prov in kalidns.DOH_PROVIDERS.items():
+            self.assertIn('server_name', prov, f"{name} missing server_name")
+            self.assertIn('stamp', prov, f"{name} missing stamp")
+            self.assertIn('listen', prov, f"{name} missing listen")
 
 
 if __name__ == '__main__':
