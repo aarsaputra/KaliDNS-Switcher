@@ -40,7 +40,7 @@ def check_root():
         sys.exit(1)
 
 def clear_screen():
-    os.system('clear')
+    subprocess.run(['clear'], stderr=subprocess.DEVNULL)
 
 def banner():
     print(f"{Color.HEADER}{Color.BOLD}")
@@ -82,12 +82,13 @@ def cleanup_old_backups(max_age_days=7):
                         try:
                             os.remove(filepath)
                             cleaned += 1
-                        except: pass
+                        except Exception:
+                            pass
         if cleaned > 0:
             msg = f"Auto-Cleanup: Membersihkan {cleaned} file backup lama (> {max_age_days} hari)."
             print(f"{Color.BLUE}[i] {msg}{Color.ENDC}")
             log_action("CLEANUP", msg)
-    except Exception as e:
+    except Exception:
         pass
 
 def backup_file(filepath):
@@ -162,8 +163,9 @@ def verify_dns_change(expected_ips):
         log_action("VERIFY_FAIL", f"Expected {expected_ips}, got {current}")
         return False
 
-def test_dns_leak():
-    print(f"\n{Color.WARNING}[*] Melakukan DNS Connection Test...{Color.ENDC}")
+def test_dns_connectivity():
+    """Test DNS resolution connectivity (not a DNS leak test)."""
+    print(f"\n{Color.WARNING}[*] Melakukan DNS Connectivity Test...{Color.ENDC}")
     test_domains = ['google.com', 'cloudflare.com', 'github.com']
     success_count = 0
     for domain in test_domains:
@@ -175,32 +177,41 @@ def test_dns_leak():
                 success_count += 1
             else:
                 print(f"{Color.FAIL}[✗] Resolve {domain} : FAILED{Color.ENDC}")
-        except:
+        except Exception:
             print(f"{Color.WARNING}[?] Resolve {domain} : TIMEOUT{Color.ENDC}")
     
     status = "UNKNOWN"
     if success_count == len(test_domains):
-        print(f"{Color.GREEN}[✓] INTERNET CONNECTION: EXCELLENT{Color.ENDC}")
+        print(f"{Color.GREEN}[✓] DNS CONNECTIVITY: EXCELLENT{Color.ENDC}")
         status = "EXCELLENT"
     elif success_count > 0:
-        print(f"{Color.WARNING}[!] INTERNET CONNECTION: UNSTABLE{Color.ENDC}")
+        print(f"{Color.WARNING}[!] DNS CONNECTIVITY: UNSTABLE{Color.ENDC}")
         status = "UNSTABLE"
     else:
-        print(f"{Color.FAIL}[!] INTERNET CONNECTION: DISCONNECTED / DNS ERROR{Color.ENDC}")
+        print(f"{Color.FAIL}[!] DNS CONNECTIVITY: DISCONNECTED / DNS ERROR{Color.ENDC}")
         status = "DISCONNECTED"
-    log_action("TEST_LEAK", f"Status: {status} ({success_count}/{len(test_domains)})")
+    log_action("DNS_CONNECTIVITY", f"Status: {status} ({success_count}/{len(test_domains)})")
 
-def benchmark_dns(ip, domain='google.com'):
-    try:
-        start = time.time()
-        subprocess.run(['nslookup', '-timeout=2', domain, ip],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        return time.time() - start
-    except:
+def benchmark_dns(ip, domain='google.com', rounds=3):
+    if not shutil.which('nslookup'):
+        print(f"{Color.FAIL}[!] 'nslookup' tidak ditemukan. Install dnsutils: sudo apt install dnsutils{Color.ENDC}")
         return float('inf')
+    times = []
+    for _ in range(rounds):
+        try:
+            start = time.time()
+            subprocess.run(['nslookup', '-timeout=2', domain, ip],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            times.append(time.time() - start)
+        except Exception:
+            pass
+    return sum(times) / len(times) if times else float('inf')
 
 def run_benchmark():
-    print(f"\n{Color.WARNING}[*] Benchmarking DNS Speed (Lower is better)...{Color.ENDC}")
+    print(f"\n{Color.WARNING}[*] Benchmarking DNS Speed (3-round avg, lower is better)...{Color.ENDC}")
+    if not shutil.which('nslookup'):
+        print(f"{Color.FAIL}[!] 'nslookup' tidak ditemukan. Install: sudo apt install dnsutils{Color.ENDC}")
+        return
     results = []
     for key, data in DNS_PRESETS.items():
         name = data['name']
@@ -224,7 +235,8 @@ def run_benchmark():
 def unlock_file():
     try:
         subprocess.run(['chattr', '-i', RESOLV_CONF], stderr=subprocess.DEVNULL)
-    except: pass 
+    except Exception:
+        pass
 
 def lock_file():
     try:
@@ -241,7 +253,8 @@ def flush_dns_cache():
     for cmd in commands:
         try:
             subprocess.run(cmd, stderr=subprocess.DEVNULL)
-        except: continue
+        except Exception:
+            continue
     log_action("FLUSH", "DNS Cache flushed")
 
 def set_dns(nameservers, provider_name="Custom"):
@@ -258,7 +271,7 @@ def set_dns(nameservers, provider_name="Custom"):
     print(f"\n{Color.WARNING}[*] Menerapkan DNS {provider_name} (Standard)...{Color.ENDC}")
     log_action("SET_DNS", f"Provider: {provider_name}, IPs: {valid_ips}")
     
-    if os.path.exists(SYSTEMD_RESOLVED_CONF + ".bak"): restore_systemd_config_silent()
+    restore_systemd_config_silent()
     unlock_file()
     backup_file(RESOLV_CONF)
 
@@ -269,7 +282,7 @@ def set_dns(nameservers, provider_name="Custom"):
         print(f"{Color.GREEN}[+] Berhasil mengubah DNS ke: {', '.join(valid_ips)}{Color.ENDC}")
         lock_file()
         flush_dns_cache()
-        if verify_dns_change(valid_ips): test_dns_leak()
+        if verify_dns_change(valid_ips): test_dns_connectivity()
 
 def setup_dot(provider="Cloudflare"):
     print(f"\n{Color.WARNING}[*] Mengaktifkan Mode Anti-Blokir (DoT - {provider})...{Color.ENDC}")
@@ -290,13 +303,15 @@ def setup_dot(provider="Cloudflare"):
         dns_ip = "9.9.9.9 149.112.112.112 2620:fe::fe 2620:fe::9"
         fallback = "1.1.1.1"
     
-    config_content = f"[Resolve]\nDNS={dns_ip}\nFallbackDNS={fallback}\nDomains=~.\nDNSOverTLS=yes\nDNSSEC=no\n"
+    config_content = f"[Resolve]\nDNS={dns_ip}\nFallbackDNS={fallback}\nDomains=~.\nDNSOverTLS=yes\nDNSSEC=allow-downgrade\n"
     
     backup_file(SYSTEMD_RESOLVED_CONF)
     if not atomic_write(SYSTEMD_RESOLVED_CONF, config_content): return
 
-    try: subprocess.run(['systemctl', 'enable', 'systemd-resolved'], stderr=subprocess.DEVNULL)
-    except: pass
+    try:
+        subprocess.run(['systemctl', 'enable', 'systemd-resolved'], stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
     
     if not safe_restart_service('systemd-resolved'):
         print(f"{Color.FAIL}[!] Gagal restart systemd-resolved.{Color.ENDC}")
@@ -309,14 +324,37 @@ def setup_dot(provider="Cloudflare"):
         lock_file()
         flush_dns_cache()
         print(f"{Color.GREEN}[+] SUKSES! Mode Anti-Blokir (DoT) aktif.{Color.ENDC}")
-        test_dns_leak()
+        test_dns_connectivity()
+
+def _find_latest_backup(filepath):
+    """Find the most recent .backup_* file for a given config file."""
+    backup_dir = os.path.dirname(filepath)
+    basename = os.path.basename(filepath)
+    backups = []
+    try:
+        for f in os.listdir(backup_dir):
+            if f.startswith(basename + '.backup_'):
+                full = os.path.join(backup_dir, f)
+                if os.path.isfile(full):
+                    backups.append(full)
+    except Exception:
+        return None
+    if not backups:
+        return None
+    return max(backups, key=os.path.getmtime)
 
 def restore_systemd_config_silent():
-    if os.path.exists(SYSTEMD_RESOLVED_CONF + ".bak"):
-        shutil.copy2(SYSTEMD_RESOLVED_CONF + ".bak", SYSTEMD_RESOLVED_CONF)
+    latest = _find_latest_backup(SYSTEMD_RESOLVED_CONF)
+    if latest:
+        shutil.copy2(latest, SYSTEMD_RESOLVED_CONF)
         safe_restart_service('systemd-resolved')
 
 def restore_default():
+    confirm = input(f"{Color.WARNING}[?] Yakin ingin mereset semua konfigurasi DNS? (y/N): {Color.ENDC}")
+    if confirm.strip().lower() != 'y':
+        print(f"{Color.BLUE}[i] Operasi dibatalkan.{Color.ENDC}")
+        return
+
     print(f"\n{Color.WARNING}[*] Mengembalikan ke Default (DHCP)...{Color.ENDC}")
     log_action("RESTORE", "Restoring to default configuration")
     
@@ -337,7 +375,8 @@ def print_dot_status():
             with open(SYSTEMD_RESOLVED_CONF, 'r') as f:
                 if "DNSOverTLS=yes" in f.read():
                     dot_status = f"{Color.GREEN}AKTIF (Secure/Encrypted){Color.ENDC}"
-        except: pass
+        except Exception:
+            pass
     print(f"Status Anti-Blokir (DoT): {dot_status}")
 
 def parse_args():
@@ -348,7 +387,7 @@ def parse_args():
             set_dns(preset['ips'], preset['name'])
             return True
         elif arg == '--test':
-            test_dns_leak()
+            test_dns_connectivity()
             return True
         elif arg == '--benchmark':
             run_benchmark()
@@ -417,7 +456,7 @@ def main():
         elif choice == '8': setup_dot("Google")
         elif choice == '9': setup_dot("Quad9")
         elif choice == '10': run_benchmark()
-        elif choice == '11': test_dns_leak()
+        elif choice == '11': test_dns_connectivity()
         elif choice == '12': restore_default()
         elif choice == '0':
             print("Keluar.")
