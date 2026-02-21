@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kalidns"
+version = "2.0.0"
+description = "Advanced DNS Manager for Kali Linux — DoT, DoH, Leak Test, Benchmark, IPv6"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "aarsaputra"}
+]
+keywords = ["dns", "kali", "linux", "security", "pentesting", "dot", "doh"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Networking",
+    "Topic :: Security",
+]
+dependencies = [
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+kalidns = "kalidns:main"
+
+[tool.setuptools]
+py-modules = ["kalidns"]
