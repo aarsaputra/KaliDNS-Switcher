@@ -501,10 +501,21 @@ def setup_doh(provider="Cloudflare"):
         if confirm.strip().lower() != 'y':
             print(f"{Color.BLUE}[i] Install manual: sudo apt install dnscrypt-proxy{Color.ENDC}")
             return
-        print(f"{Color.BLUE}[i] Menginstall dnscrypt-proxy...{Color.ENDC}")
+        print(f"{Color.BLUE}[i] Menginstall dnscrypt-proxy (ini bisa memakan waktu)...{Color.ENDC}")
         try:
-            subprocess.run(['apt', 'update', '-qq'], check=True, timeout=60)
-            subprocess.run(['apt', 'install', '-y', '-qq', 'dnscrypt-proxy'], check=True, timeout=120)
+            subprocess.run(['apt', 'update', '-qq'], check=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            print(f"{Color.FAIL}[!] 'apt update' timeout. Kemungkinan DNS belum aktif atau koneksi lambat.{Color.ENDC}")
+            print(f"{Color.BLUE}[i] Coba: 1) Reset DNS dulu (menu 15), 2) Pastikan internet aktif, 3) Install manual: sudo apt install dnscrypt-proxy{Color.ENDC}")
+            return
+        except Exception as e:
+            print(f"{Color.FAIL}[!] Gagal apt update: {e}{Color.ENDC}")
+            return
+        try:
+            subprocess.run(['apt', 'install', '-y', '-qq', 'dnscrypt-proxy'], check=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            print(f"{Color.FAIL}[!] Install dnscrypt-proxy timeout. Coba manual: sudo apt install dnscrypt-proxy{Color.ENDC}")
+            return
         except Exception as e:
             print(f"{Color.FAIL}[!] Gagal install: {e}{Color.ENDC}")
             return
