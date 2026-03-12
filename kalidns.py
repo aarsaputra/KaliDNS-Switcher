@@ -4,7 +4,7 @@ import subprocess
 from kalidns_modules.config import DNS_PRESETS
 from kalidns_modules.utils import (
     Color, check_root, cleanup_old_backups, 
-    log_action, unlock_file
+    log_action, unlock_file, RICH_AVAILABLE
 )
 from kalidns_modules.dns_manager import (
     get_current_dns, set_dns, setup_dot, setup_doh, 
@@ -12,7 +12,7 @@ from kalidns_modules.dns_manager import (
 )
 from kalidns_modules.benchmark import run_benchmark_plain
 from kalidns_modules.tui import (
-    RICH_AVAILABLE, banner, display_menu, run_benchmark_rich,
+    banner, display_menu, run_benchmark_rich,
     get_dot_doh_status
 )
 

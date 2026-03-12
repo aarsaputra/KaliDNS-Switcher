@@ -9,6 +9,12 @@ import signal
 import atexit
 from .config import LOG_DIR, LOG_FILE, RESOLV_CONF
 
+try:
+    from rich.console import Console
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+
 # --- KONFIGURASI WARNA ---
 class Color:
     HEADER = '\033[95m'
@@ -25,6 +31,7 @@ console = None
 def check_root():
     if os.geteuid() != 0:
         print(f"{Color.FAIL}[!] Script ini harus dijalankan sebagai ROOT (sudo).{Color.ENDC}")
+        input(f"{Color.BLUE}Tekan Enter untuk keluar...{Color.ENDC}")
         sys.exit(1)
 
 def log_action(action, details):

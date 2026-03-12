@@ -1,7 +1,8 @@
 import os
 import subprocess
 from .config import DNS_PRESETS, SYSTEMD_RESOLVED_CONF, DNSCRYPT_PROXY_CONF
-from .utils import Color, console
+from . import utils
+from .utils import Color, RICH_AVAILABLE
 from .benchmark import collect_benchmark_results, DEFAULT_BENCHMARK_ROUNDS
 
 try:
@@ -10,9 +11,8 @@ try:
     from rich.text import Text
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
     from rich import box
-    RICH_AVAILABLE = True
 except ImportError:
-    RICH_AVAILABLE = False
+    pass
 
 def get_dot_doh_status():
     dot_status = f"{Color.FAIL}Non-Aktif (Standard){Color.ENDC}"
@@ -38,12 +38,12 @@ def get_dot_doh_status():
     return dot_status, doh_status
 
 def banner():
-    if RICH_AVAILABLE:
+    if RICH_AVAILABLE and utils.console:
         banner_text = Text()
         banner_text.append("KALI LINUX DNS CHANGER TOOL\n", style="bold cyan")
         banner_text.append("v2.1 MODULAR EDITION\n", style="bold white")
         banner_text.append("DoT • DoH • Leak Test • Benchmark • IPv6", style="dim")
-        console.print(Panel(banner_text, border_style="bright_cyan", box=box.DOUBLE_EDGE, padding=(1, 2)))
+        utils.console.print(Panel(banner_text, border_style="bright_cyan", box=box.DOUBLE_EDGE, padding=(1, 2)))
     else:
         print(f"{Color.HEADER}{Color.BOLD}")
         print("="*60)
@@ -53,15 +53,14 @@ def banner():
         print(f"{Color.ENDC}")
 
 def run_benchmark_rich():
-    if not RICH_AVAILABLE: return
-    from .utils import console
+    if not (RICH_AVAILABLE and utils.console): return
     import shutil
     
     if not shutil.which('nslookup'):
-        console.print("[bold red][!] 'nslookup' tidak ditemukan. Install: sudo apt install dnsutils[/bold red]")
+        utils.console.print("[bold red][!] 'nslookup' tidak ditemukan. Install: sudo apt install dnsutils[/bold red]")
         return
 
-    console.print(f"\n[bold yellow][*] Benchmarking DNS Speed ({DEFAULT_BENCHMARK_ROUNDS}-round avg)...[/bold yellow]")
+    utils.console.print(f"\n[bold yellow][*] Benchmarking DNS Speed ({DEFAULT_BENCHMARK_ROUNDS}-round avg)...[/bold yellow]")
     
     results = []
     table = Table(title="DNS Benchmark Results", box=box.ROUNDED, border_style="cyan")
@@ -70,7 +69,7 @@ def run_benchmark_rich():
     table.add_column("Status", justify="center")
 
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  BarColumn(), transient=True, console=console) as progress:
+                  BarColumn(), transient=True, console=utils.console) as progress:
         task = progress.add_task("Testing...", total=len(DNS_PRESETS))
         
         def progress_callback(name):
@@ -85,21 +84,21 @@ def run_benchmark_rich():
                 table.add_row(name, "---", "[red]✗ Timeout[/red]")
             progress.advance(task)
 
-    console.print(table)
+    utils.console.print(table)
     if results:
         best = min(results, key=lambda x: x[1])
-        console.print(f"\n[bold cyan][i] Rekomendasi Tercepat: [bold white]{best[0]} ({best[1]:.4f}s)[/bold white][/bold cyan]")
+        utils.console.print(f"\n[bold cyan][i] Rekomendasi Tercepat: [bold white]{best[0]} ({best[1]:.4f}s)[/bold white][/bold cyan]")
     else:
-        console.print("\n[bold red][!] Semua koneksi timeout.[/bold red]")
+        utils.console.status.print("\n[bold red][!] Semua koneksi timeout.[/bold red]")
 
 def display_menu(current_dns):
     dot_status, doh_status = get_dot_doh_status()
     
-    if RICH_AVAILABLE:
-        console.print(f"DNS: [bold green]{', '.join(current_dns)}[/bold green]")
-        console.print(f"Status Anti-Blokir (DoT): {dot_status}")
-        console.print(f"Status DoH             : {doh_status}")
-        console.print()
+    if RICH_AVAILABLE and utils.console:
+        utils.console.print(f"DNS: [bold green]{', '.join(current_dns)}[/bold green]")
+        utils.console.print(f"Status Anti-Blokir (DoT): {dot_status}")
+        utils.console.print(f"Status DoH             : {doh_status}")
+        utils.console.print()
 
         t = Table(title="DNS Presets", box=box.SIMPLE_HEAVY, border_style="cyan")
         t.add_column("#", style="bold", width=3)
@@ -109,14 +108,14 @@ def display_menu(current_dns):
         for key, data in DNS_PRESETS.items():
             t.add_row(key, data['name'], ', '.join(data['ips']), ', '.join(data.get('ipv6', [])[:1]))
         t.add_row("6", "Custom (Manual)", "IPv4/IPv6", "")
-        console.print(t)
+        utils.console.print(t)
 
-        console.print("\n[bold yellow]ANTI-BLOKIR (Enkripsi):[/bold yellow]")
-        console.print(" 7-9.   DoT (Cloudflare / Google / Quad9)")
-        console.print(" 10-11. DoH (Cloudflare / Google via dnscrypt-proxy)")
-        console.print(f"\n[bold cyan]UTILITIES:[/bold cyan]")
-        console.print(" 12. Benchmark  |  13. Connectivity  |  14. Leak Test")
-        console.print(" [bold red]15. Reset ke Default[/bold red]  |  0. Keluar")
+        utils.console.print("\n[bold yellow]ANTI-BLOKIR (Enkripsi):[/bold yellow]")
+        utils.console.print(" 7-9.   DoT (Cloudflare / Google / Quad9)")
+        utils.console.print(" 10-11. DoH (Cloudflare / Google via dnscrypt-proxy)")
+        utils.console.print(f"\n[bold cyan]UTILITIES:[/bold cyan]")
+        utils.console.print(" 12. Benchmark  |  13. Connectivity  |  14. Leak Test")
+        utils.console.print(" [bold red]15. Reset ke Default[/bold red]  |  0. Keluar")
     else:
         print(f"DNS di /etc/resolv.conf: {Color.GREEN}{', '.join(current_dns)}{Color.ENDC}")
         print(f"Status Anti-Blokir (DoT): {dot_status}")
