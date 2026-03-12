@@ -24,11 +24,11 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+ui = ["rich>=13.0"]
 
 [project.scripts]
 kalidns = "kalidns:main"

@@ -34,7 +34,7 @@ You can run this script directly without installation.
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/YOUR_USERNAME/KaliDNS-Switcher.git
+    git clone https://github.com/aarsaputra/KaliDNS-Switcher.git
     cd KaliDNS-Switcher
     ```
 
