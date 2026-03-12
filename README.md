@@ -1,88 +1,105 @@
-# KaliDNS Switcher (Ultimate Edition) 🛡️
+# KaliDNS Switcher (Modular Edition v2.1) 🛡️
 
-KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers and Linux Power Users. It allows you to switch DNS providers instantly, benchmark connection speeds, and enable DNS-over-TLS (DoT) to bypass censorship and prevent DNS poisoning/hijacking.
+KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers and Linux Power Users. It allows you to switch DNS providers instantly, benchmark connection speeds, and enable encrypted DNS protocols (**DoT & DoH**) to bypass censorship and prevent DNS poisoning/hijacking.
 
-**Note:** This tool uses atomic file writing and `chattr` locking to ensure your DNS configuration persists even after a reboot or NetworkManager restart.
+**Modular Edition v2.1** brings a completely refactored codebase, improved safety mechanisms, and a comprehensive test suite.
+
+---
 
 ## 🔥 Key Features
 
-*   **🛡️ Secure Anti-Censorship (DoT):** Enable DNS-over-TLS (Cloudflare/Google) to bypass ISP blocking transparently using `systemd-resolved`.
-*   **⚡ Speed Benchmark:** Automatically test and find the fastest DNS provider for your connection.
-*   **🔒 Atomic Writes & Locking:** Prevents configuration corruption and locks `/etc/resolv.conf` to prevent overwrites by the OS.
-*   **🕵️ DNS Leak Test:** Built-in connectivity check to ensure your DNS requests are resolving correctly.
-*   **💾 Auto-Backup & Cleanup:** Automatically backs up configuration files before changes and cleans old backups to save disk space.
-*   **📝 Logging System:** Detailed activity logs stored in `/var/log/kalidns/`.
+*   **🛡️ Encrypted DNS (DoT & DoH):** 
+    *   **DoT (DNS-over-TLS):** Uses `systemd-resolved` (Cloudflare/Google/Quad9).
+    *   **DoH (DNS-over-HTTPS):** Uses `dnscrypt-proxy` for maximum privacy.
+*   **⚡ Smart Benchmark:** Automatically test and find the fastest DNS provider with a real-time progress bar.
+*   **🌐 IPv6 Support:** Native support for IPv6 presets and custom inputs.
+*   **🔒 Safety & Persistence:** 
+    *   **atexit Cleanup:** Automatically unlocks `/etc/resolv.conf` on crash or interrupted exit.
+    *   **Atomic Writes:** Prevents configuration corruption during power loss.
+    *   **Chattr Locking:** Prevents overwrite by NetworkManager or DHCP.
+*   **🕵️ DNS Leak Test:** Integrated privacy check using `bash.ws` to verify your ISP isn't intercepting queries.
+*   **📂 Modular Architecture:** Clean separation of concerns between TUI, Benchmark, DNS Management, and Utils.
+
+---
 
 ## 📸 Screenshots
 
 <div align="center">
   
   ![Main Interface](1.png)
-  *Main menu interface showing available DNS options*
+  *Modern TUI with Rich support*
   
   ![Benchmark Results](2.png)
-  *DNS speed benchmark test results*
+  *DNS speed benchmark with prioritized results*
   
   ![Status Check](3.png)
-  *Current system status and DNS configuration*
+  *Detailed status showing DoT/DoH activation*
 
 </div>
 
-## 🚀 Installation & Usage
+---
 
-You can run this script directly without installation.
+## 🚀 Installation
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/aarsaputra/KaliDNS-Switcher.git
-    cd KaliDNS-Switcher
-    ```
+### 1. Clone the repository
+```bash
+git clone https://github.com/aarsaputra/KaliDNS-Switcher.git
+cd KaliDNS-Switcher
+```
 
-2.  Make it executable:
-    ```bash
-    chmod +x kalidns.py
-    ```
+### 2. Install with Rich Support (Recommended)
+This version uses the `rich` library for a beautiful terminal experience.
+```bash
+sudo pip install .[ui]
+```
+*Note: The script also works without any dependencies in "Plain Mode".*
 
-3.  Run the tool (Root required):
-    ```bash
-    sudo ./kalidns.py
-    ```
-    Or use Python directly:
-    ```bash
-    sudo python3 kalidns.py
-    ```
+### 3. Usage (Root required)
+```bash
+sudo python3 kalidns.py
+```
+
+---
 
 ## 🎮 CLI Arguments (Non-Interactive Mode)
 
-You can use arguments for quick switching:
+| Command                           | Description                                     |
+| :-------------------------------- | :---------------------------------------------- |
+| `sudo ./kalidns.py 1 --ipv6`      | Switch to Google DNS (v4 + v6)                  |
+| `sudo ./kalidns.py --connectivity` | Run DNS Connectivity Test                      |
+| `sudo ./kalidns.py --leak`         | Run DNS Leak Test (bash.ws)                     |
+| `sudo ./kalidns.py --benchmark`    | Run Speed Test on all presets                   |
+| `sudo ./kalidns.py --status`       | Show current DNS, DoT, and DoH status           |
+| `sudo ./kalidns.py --reset`        | Restore to System Default                       |
 
-| Command                     | Description                                |
-| :-------------------------- | :----------------------------------------- |
-| `sudo ./kalidns.py 1`       | Switch to Google DNS instantly             |
-| `sudo ./kalidns.py 2`       | Switch to Cloudflare DNS instantly         |
-| `sudo ./kalidns.py --test`  | Run DNS Leak/Connection Test               |
-| `sudo ./kalidns.py --benchmark` | Run Speed Test on all presets          |
-| `sudo ./kalidns.py --status`| Show current DNS & DoT status              |
-| `sudo ./kalidns.py --reset` | Restore to Default (DHCP)                  |
+---
 
-## 🛠️ Presets Included
+## 🛠️ Project Structure
+```text
+KaliDNS-Switcher/
+├── kalidns.py           # Single Entry Point
+├── kalidns_modules/     # Core Logic Modules
+│   ├── config.py        # Centralized Settings & Presets
+│   ├── dns_manager.py   # Core DNS/DoT/DoH logic
+│   ├── benchmark.py     # Speed Test Engine
+│   ├── tui.py          # Rich/Plain UI Manager
+│   └── utils.py         # Shared Utilities & Safety
+├── tests/               # Unit Test Suite (pytest)
+└── pyproject.toml       # Build system & Dependencies
+```
 
-*   **Google (`8.8.8.8`)** - Standard & Fast
-*   **Cloudflare (`1.1.1.1`)** - Privacy & Speed
-*   **Quad9 (`9.9.9.9`)** - Malware Blocking
-*   **AdGuard** - Ad Blocking
-*   **CleanBrowsing** - Family Filter
+---
 
-## 🤝 Contributing
+## 🤝 Contributing & Tests
+Running tests locally:
+```bash
+pip install .[dev]
+pytest tests/
+```
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-1.  Fork the Project
-2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4.  Push to the Branch (`git push origin feature/AmazingFeature`)
-5.  Open a Pull Request
+---
 
 ## 📜 License
-
 Distributed under the MIT License. See `LICENSE` for more information.
