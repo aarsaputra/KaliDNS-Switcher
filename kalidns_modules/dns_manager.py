@@ -10,7 +10,7 @@ import random
 import string
 from .config import (
     RESOLV_CONF, SYSTEMD_RESOLVED_CONF, DNSCRYPT_PROXY_CONF,
-    DOH_PROVIDERS, DNS_PRESETS
+    DOH_PROVIDERS, DOT_PROVIDERS, DNS_PRESETS
 )
 from .utils import (
     Color, log_action, validate_ip, backup_file, unlock_file, 
@@ -176,6 +176,11 @@ def set_dns(nameservers, provider_name="Custom"):
     print(f"\n{Color.WARNING}[*] Menerapkan DNS {provider_name} (Standard)...{Color.ENDC}")
     log_action("SET_DNS", f"Provider: {provider_name}, IPs: {valid_ips}")
     
+    try:
+        subprocess.run(['systemctl', 'stop', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'disable', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
+    except Exception: pass
+
     # Reset systemd-resolved to ensure standard mode works
     restore_systemd_config_silent()
     unlock_file()
@@ -199,15 +204,9 @@ def setup_dot(provider="Cloudflare"):
         return
 
     # Configuration for DoT Providers
-    if provider == "Cloudflare":
-        dns_ip = "1.1.1.1 1.0.0.1 2606:4700:4700::1111 2606:4700:4700::1001"
-        fallback = "8.8.8.8"
-    elif provider == "Google":
-        dns_ip = "8.8.8.8 8.8.4.4 2001:4860:4860::8888 2001:4860:4860::8844"
-        fallback = "1.1.1.1"
-    elif provider == "Quad9":
-        dns_ip = "9.9.9.9 149.112.112.112 2620:fe::fe 2620:fe::9"
-        fallback = "1.1.1.1"
+    if provider in DOT_PROVIDERS:
+        dns_ip = DOT_PROVIDERS[provider]['dns_ip']
+        fallback = DOT_PROVIDERS[provider]['fallback']
     else:
         print(f"{Color.FAIL}[!] Provider DoT '{provider}' tidak dikenal.{Color.ENDC}")
         return
@@ -219,6 +218,8 @@ def setup_dot(provider="Cloudflare"):
 
     try:
         subprocess.run(['systemctl', 'enable', 'systemd-resolved'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'stop', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'disable', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
     except Exception:
         pass
     
@@ -300,6 +301,7 @@ stamp = '{prov['stamp']}'
     try:
         subprocess.run(['systemctl', 'stop', 'systemd-resolved'], stderr=subprocess.DEVNULL)
         subprocess.run(['systemctl', 'disable', 'systemd-resolved'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'enable', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
     except Exception: pass
 
     if not safe_restart_service('dnscrypt-proxy'): return
@@ -350,6 +352,13 @@ def restore_default(rich_available=False):
     
     default_systemd = "# systemd-resolved.conf (Reset by KaliDNS)\n[Resolve]\n#DNS=\n#FallbackDNS=\n#DNSOverTLS=no\n"
     atomic_write(SYSTEMD_RESOLVED_CONF, default_systemd)
+    
+    try:
+        subprocess.run(['systemctl', 'enable', 'systemd-resolved'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'stop', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
+        subprocess.run(['systemctl', 'disable', 'dnscrypt-proxy'], stderr=subprocess.DEVNULL)
+    except Exception: pass
+
     safe_restart_service('systemd-resolved')
     unlock_file()
     if os.path.exists(RESOLV_CONF): os.remove(RESOLV_CONF)

@@ -1,8 +1,8 @@
-# KaliDNS Switcher (Modular Edition v2.1) 🛡️
+# KaliDNS Switcher (Modular Edition v2.2) 🛡️
 
 KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers and Linux Power Users. It allows you to switch DNS providers instantly, benchmark connection speeds, and enable encrypted DNS protocols (**DoT & DoH**) to bypass censorship and prevent DNS poisoning/hijacking.
 
-**Modular Edition v2.1** brings a completely refactored codebase, improved safety mechanisms, and a comprehensive test suite.
+**Modular Edition v2.2** brings dynamic provider configurations, standard `argparse` CLI support, smart backup management, and a new System Check feature.
 
 ---
 
@@ -17,8 +17,10 @@ KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers
     *   **atexit Cleanup:** Automatically unlocks `/etc/resolv.conf` on crash or interrupted exit.
     *   **Atomic Writes:** Prevents configuration corruption during power loss.
     *   **Chattr Locking:** Prevents overwrite by NetworkManager or DHCP.
+    *   **Smart Backups:** Automatically rotates `resolv.conf` backups limiting to 10 max files.
 *   **🕵️ DNS Leak Test:** Integrated privacy check using `bash.ws` to verify your ISP isn't intercepting queries.
-*   **📂 Modular Architecture:** Clean separation of concerns between TUI, Benchmark, DNS Management, and Utils.
+*   **🩺 System Check (Doctor):** Diagnose your OS environment setup, dependencies, and capability natively.
+*   **🔓 VPN Ready:** Includes a manual `resolv.conf` unlocker utility to quickly switch environments for OpenVPN or WireGuard.
 
 ---
 
@@ -46,8 +48,11 @@ KaliDNS Switcher is a production-grade CLI tool designed for Penetration Testers
 git clone https://github.com/aarsaputra/KaliDNS-Switcher.git
 cd KaliDNS-Switcher
 ```
+    
+### 2. Configure Providers (Optional)
+Add or modify dynamic providers of DoT and DoH directly in `kalidns_modules/config.py`.
 
-### 2. Install with Rich Support (Recommended)
+### 3. Install with Rich Support (Recommended)
 This version uses the `rich` library for a beautiful terminal experience.
 ```bash
 sudo pip install .[ui]
@@ -65,11 +70,14 @@ sudo python3 kalidns.py
 
 | Command                           | Description                                     |
 | :-------------------------------- | :---------------------------------------------- |
-| `sudo ./kalidns.py 1 --ipv6`      | Switch to Google DNS (v4 + v6)                  |
+| `sudo ./kalidns.py --preset 1 --ipv6` | Switch to Google DNS (v4 + v6)                  |
+| `sudo ./kalidns.py --dot Cloudflare`  | Enable DoT using Cloudflare                    |
 | `sudo ./kalidns.py --connectivity` | Run DNS Connectivity Test                      |
 | `sudo ./kalidns.py --leak`         | Run DNS Leak Test (bash.ws)                     |
 | `sudo ./kalidns.py --benchmark`    | Run Speed Test on all presets                   |
 | `sudo ./kalidns.py --status`       | Show current DNS, DoT, and DoH status           |
+| `sudo ./kalidns.py --check`        | Run System Dependency Diagnostics (Doctor)      |
+| `sudo ./kalidns.py --unlock`       | Manually unlock resolv.conf for VPN             |
 | `sudo ./kalidns.py --reset`        | Restore to System Default                       |
 
 ---

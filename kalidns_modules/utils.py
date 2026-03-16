@@ -7,7 +7,7 @@ import datetime
 import ipaddress
 import signal
 import atexit
-from .config import LOG_DIR, LOG_FILE, RESOLV_CONF
+from .config import LOG_DIR, LOG_FILE, RESOLV_CONF, MAX_BACKUP_FILES
 
 try:
     from rich.console import Console
@@ -52,26 +52,49 @@ def validate_ip(ip_str):
     except ValueError:
         return None
 
-def cleanup_old_backups(max_age_days=7):
+def cleanup_old_backups(max_age_days=7, max_files=MAX_BACKUP_FILES):
     now = time.time()
     backup_dir = os.path.dirname(RESOLV_CONF) 
     cleaned = 0
     try:
         if not os.path.exists(backup_dir):
             return
+            
+        # Collect backup files
+        backup_files = []
         for file in os.listdir(backup_dir):
             if ('resolv.conf.backup_' in file or 'resolved.conf.backup_' in file):
                 filepath = os.path.join(backup_dir, file)
                 if os.path.isfile(filepath):
-                    mtime = os.path.getmtime(filepath)
-                    if (now - mtime) > (max_age_days * 86400):
-                        try:
-                            os.remove(filepath)
-                            cleaned += 1
-                        except Exception:
-                            pass
+                    backup_files.append((filepath, os.path.getmtime(filepath)))
+        
+        # Sort by modification time (oldest first)
+        backup_files.sort(key=lambda x: x[1])
+        
+        # 1. Remove files older than max_age_days
+        remaining_files = []
+        for filepath, mtime in backup_files:
+            if (now - mtime) > (max_age_days * 86400):
+                try:
+                    os.remove(filepath)
+                    cleaned += 1
+                except Exception:
+                    pass
+            else:
+                remaining_files.append((filepath, mtime))
+                
+        # 2. Limit total number of backup files
+        if len(remaining_files) > max_files:
+            excess = len(remaining_files) - max_files
+            for filepath, _ in remaining_files[:excess]:
+                try:
+                    os.remove(filepath)
+                    cleaned += 1
+                except Exception:
+                    pass
+                    
         if cleaned > 0:
-            msg = f"Auto-Cleanup: Membersihkan {cleaned} file backup lama (> {max_age_days} hari)."
+            msg = f"Auto-Cleanup: Membersihkan {cleaned} file backup lama/melebihi limit."
             print(f"{Color.BLUE}[i] {msg}{Color.ENDC}")
             log_action("CLEANUP", msg)
     except Exception:
@@ -92,6 +115,12 @@ def unlock_file():
         subprocess.run(['chattr', '-i', RESOLV_CONF], stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+def unlock_file_manual():
+    unlock_file()
+    print(f"{Color.GREEN}[+] Kunci file /etc/resolv.conf telah dibuka.{Color.ENDC}")
+    print(f"{Color.BLUE}[i] Sekarang Anda dapat menjalankan VPN (OpenVPN/WireGuard) tanpa error DNS.{Color.ENDC}")
+    log_action("UNLOCK", "Manual unlock via menu")
 
 def lock_file():
     try:
@@ -147,3 +176,48 @@ def safe_restart_service(service_name):
         print(f"{Color.FAIL}[!] {msg}{Color.ENDC}")
         log_action("SERVICE_ERROR", msg)
         return False
+
+def run_system_check():
+    print(f"\n{Color.WARNING}[*] Menjalankan System Check (Doctor)...{Color.ENDC}")
+    issues = 0
+    
+    # 1. Check chattr / filesystem support
+    print(f" 1. Sistem Pengaman DNS (chattr): ", end="")
+    try:
+        subprocess.run(['chattr', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        print(f"{Color.GREEN}OK{Color.ENDC}")
+    except Exception:
+        print(f"{Color.FAIL}Tidak Tersedia{Color.ENDC}")
+        issues += 1
+        
+    # 2. Check systemd-resolved
+    print(f" 2. Service systemd-resolved: ", end="")
+    try:
+        res = subprocess.run(['systemctl', 'is-active', 'systemd-resolved'], capture_output=True, text=True)
+        if res.stdout.strip() == 'active':
+            print(f"{Color.GREEN}Active{Color.ENDC}")
+        else:
+            print(f"{Color.WARNING}Inactive/Disabled{Color.ENDC}")
+    except Exception:
+        print(f"{Color.FAIL}Terdapat Masalah{Color.ENDC}")
+        issues += 1
+        
+    # 3. Check dnscrypt-proxy
+    print(f" 3. Paket dnscrypt-proxy: ", end="")
+    if shutil.which('dnscrypt-proxy'):
+        print(f"{Color.GREEN}Terinstall{Color.ENDC}")
+    else:
+        print(f"{Color.WARNING}Belum terinstall{Color.ENDC}")
+        
+    # 4. Check dnsutils (nslookup)
+    print(f" 4. Paket dnsutils (nslookup): ", end="")
+    if shutil.which('nslookup'):
+        print(f"{Color.GREEN}Terinstall{Color.ENDC}")
+    else:
+        print(f"{Color.WARNING}Belum terinstall{Color.ENDC}")
+        
+    if issues == 0:
+        print(f"\n{Color.GREEN}[✓] System Check: Semua dependensi dalam keadaan baik.{Color.ENDC}")
+    else:
+        print(f"\n{Color.WARNING}[!] System Check: Terdapat beberapa dependensi opsional yang belum lengkap.{Color.ENDC}")
+    log_action("DOCTOR", f"Found {issues} issues")

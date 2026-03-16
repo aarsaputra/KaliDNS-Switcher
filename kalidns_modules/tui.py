@@ -1,6 +1,6 @@
 import os
 import subprocess
-from .config import DNS_PRESETS, SYSTEMD_RESOLVED_CONF, DNSCRYPT_PROXY_CONF
+from .config import DNS_PRESETS, DOT_PROVIDERS, DOH_PROVIDERS, SYSTEMD_RESOLVED_CONF, DNSCRYPT_PROXY_CONF
 from . import utils
 from .utils import Color, RICH_AVAILABLE
 from .benchmark import collect_benchmark_results, DEFAULT_BENCHMARK_ROUNDS
@@ -41,14 +41,14 @@ def banner():
     if RICH_AVAILABLE and utils.console:
         banner_text = Text()
         banner_text.append("KALI LINUX DNS CHANGER TOOL\n", style="bold cyan")
-        banner_text.append("v2.1 MODULAR EDITION\n", style="bold white")
-        banner_text.append("DoT • DoH • Leak Test • Benchmark • IPv6", style="dim")
+        banner_text.append("v2.2 MODULAR EDITION\n", style="bold white")
+        banner_text.append("DoT • DoH • Utilities • VPN Ready", style="dim")
         utils.console.print(Panel(banner_text, border_style="bright_cyan", box=box.DOUBLE_EDGE, padding=(1, 2)))
     else:
         print(f"{Color.HEADER}{Color.BOLD}")
         print("="*60)
-        print("   KALI LINUX DNS CHANGER TOOL (MODULAR EDITION v2.1)")
-        print("   DoT • DoH • Leak Test • Benchmark • IPv6")
+        print("   KALI LINUX DNS CHANGER TOOL (MODULAR EDITION v2.2)")
+        print("   DoT • DoH • Utilities • VPN Ready")
         print("="*60)
         print(f"{Color.ENDC}")
 
@@ -91,7 +91,37 @@ def run_benchmark_rich():
     else:
         utils.console.status.print("\n[bold red][!] Semua koneksi timeout.[/bold red]")
 
-def display_menu(current_dns):
+def generate_menu_map():
+    menu_map = {}
+    for k in DNS_PRESETS:
+        menu_map[str(k)] = ('preset', k)
+    menu_map['6'] = ('custom', None)
+    
+    idx = 7
+    for prov in DOT_PROVIDERS:
+        menu_map[str(idx)] = ('dot', prov)
+        idx += 1
+    for prov in DOH_PROVIDERS:
+        menu_map[str(idx)] = ('doh', prov)
+        idx += 1
+        
+    menu_map[str(idx)] = ('benchmark', None)
+    idx += 1
+    menu_map[str(idx)] = ('connectivity', None)
+    idx += 1
+    menu_map[str(idx)] = ('leak', None)
+    idx += 1
+    menu_map[str(idx)] = ('system_check', None)
+    idx += 1
+    menu_map[str(idx)] = ('unlock', None)
+    idx += 1
+    menu_map[str(idx)] = ('reset', None)
+    idx += 1
+    
+    menu_map['0'] = ('exit', None)
+    return menu_map
+
+def display_menu(current_dns, menu_map):
     dot_status, doh_status = get_dot_doh_status()
     
     if RICH_AVAILABLE and utils.console:
@@ -111,11 +141,28 @@ def display_menu(current_dns):
         utils.console.print(t)
 
         utils.console.print("\n[bold yellow]ANTI-BLOKIR (Enkripsi):[/bold yellow]")
-        utils.console.print(" 7-9.   DoT (Cloudflare / Google / Quad9)")
-        utils.console.print(" 10-11. DoH (Cloudflare / Google via dnscrypt-proxy)")
+        for k, v in menu_map.items():
+            if v[0] == 'dot':
+                utils.console.print(f" {k}. Aktifkan DoT ({v[1]} Secure)")
+            elif v[0] == 'doh':
+                utils.console.print(f" {k}. Aktifkan DoH ({v[1]} via dnscrypt-proxy)")
+
         utils.console.print(f"\n[bold cyan]UTILITIES:[/bold cyan]")
-        utils.console.print(" 12. Benchmark  |  13. Connectivity  |  14. Leak Test")
-        utils.console.print(" [bold red]15. Reset ke Default[/bold red]  |  0. Keluar")
+        for k, v in menu_map.items():
+            if v[0] == 'benchmark':
+                utils.console.print(f" {k}. Benchmark (Speed Test)")
+            elif v[0] == 'connectivity':
+                utils.console.print(f" {k}. Connectivity Test")
+            elif v[0] == 'leak':
+                utils.console.print(f" {k}. DNS Leak Test")
+            elif v[0] == 'system_check':
+                utils.console.print(f" {k}. System Check (Doctor)")
+            elif v[0] == 'unlock':
+                utils.console.print(f" {k}. Buka Kunci resolv.conf (VPN Mode)")
+            elif v[0] == 'reset':
+                utils.console.print(f" [bold red]{k}. Reset ke Default[/bold red]")
+                
+        utils.console.print(" 0. Keluar")
     else:
         print(f"DNS di /etc/resolv.conf: {Color.GREEN}{', '.join(current_dns)}{Color.ENDC}")
         print(f"Status Anti-Blokir (DoT): {dot_status}")
@@ -128,15 +175,24 @@ def display_menu(current_dns):
         print(f"6. Input Custom (Manual, mendukung IPv4/IPv6)")
         print("-" * 60)
         print(f"{Color.WARNING}PILIHAN ANTI-BLOKIR (Enkripsi):{Color.ENDC}")
-        print("7.  Aktifkan DoT (Cloudflare Secure)")
-        print("8.  Aktifkan DoT (Google Secure)")
-        print("9.  Aktifkan DoT (Quad9 Secure)")
-        print("10. Aktifkan DoH (Cloudflare via dnscrypt-proxy)")
-        print("11. Aktifkan DoH (Google via dnscrypt-proxy)")
+        for k, v in menu_map.items():
+            if v[0] == 'dot':
+                print(f"{k}.  Aktifkan DoT ({v[1]} Secure)")
+            elif v[0] == 'doh':
+                print(f"{k}.  Aktifkan DoH ({v[1]} via dnscrypt-proxy)")
         print("-" * 60)
         print(f"{Color.BLUE}UTILITIES:{Color.ENDC}")
-        print("12. Benchmark Kecepatan DNS (Speed Test)")
-        print("13. Cek Koneksi DNS (Connectivity Test)")
-        print("14. DNS Leak Test (bash.ws)")
-        print(f"15. {Color.FAIL}Reset ke Default (Hapus Semua Config){Color.ENDC}")
-        print("0.  Keluar")
+        for k, v in menu_map.items():
+            if v[0] == 'benchmark':
+                print(f"{k}.  Benchmark Kecepatan DNS (Speed Test)")
+            elif v[0] == 'connectivity':
+                print(f"{k}.  Cek Koneksi DNS (Connectivity Test)")
+            elif v[0] == 'leak':
+                print(f"{k}.  DNS Leak Test (bash.ws)")
+            elif v[0] == 'system_check':
+                print(f"{k}.  Cek Sistem / Dependencies (System Check)")
+            elif v[0] == 'unlock':
+                print(f"{k}.  Buka Kunci manual (Unlock resolv.conf untuk VPN)")
+            elif v[0] == 'reset':
+                print(f"{k}.  {Color.FAIL}Reset ke Default (Hapus Semua Config){Color.ENDC}")
+        print("0.   Keluar")
